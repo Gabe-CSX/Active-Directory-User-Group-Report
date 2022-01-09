@@ -7,11 +7,25 @@ Catch {
 }
 
 
+#Function assignment
+function Get-Expanded ($Identity, $Property) {
+    Get-ADUser -Identity $Identity | Select-Object -ExpandProperty $Property
+}
+function Get-ExpandedProperty($Enabled, $Select) {
+    Get-ADUser -Filter * -Property Enabled | Where-Object {$_.Enabled -match "$Enabled"} | Select-Object -ExpandProperty $Select
+}
+function Get-Membership($Identity) {
+    Get-ADUser -Identity $Identity | Get-ADPrincipalGroupMembership | Where-Object {$_.Name -notmatch 'Domain Users'} | Select-Object -ExpandProperty Name
+}
+
+
+
 #Variable assignment
-$activeUsers = Get-ADUser -Filter * -Property Enabled | Where-Object {$_.Enabled -match 'true'} | Select-Object -ExpandProperty SamAccountName
-$disabledUsers = Get-ADUser -Filter * -Property Enabled | Where-Object {$_.Enabled -match 'false'} | Select-Object -ExpandProperty SamAccountName
+$activeUsers = Get-ExpandedProperty -Enabled "true" -Select SamAccountName
+$disabledUsers = Get-ExpandedProperty -Enabled "false" -Select SamAccountName
+$name = "Users and groups on $env:COMPUTERNAME"
 $html = @"
-<h1>Users and groups on $env:COMPUTERNAME</h1>
+<h1>$name</h1>
 <div class='legend'>
     <h2>Legend:<h2>
     <ul>
@@ -25,7 +39,7 @@ $head = @"
 <meta charset='UTF-8'>
 <meta name='author' content='Gabe-CSX on github'>
 <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-<title>Users and Groups on $env:COMPUTERNAME</title>
+<title>$name</title>
 <style>
     * {
         margin: 0;
@@ -63,11 +77,11 @@ $html += "<div class='grid-container'>"
 
 #Set up filtering groups with individual styling elements
 ForEach ($user in $disabledUsers) {
-    $groups = Get-ADUser -Identity $user | Get-ADPrincipalGroupMembership | Where-Object {$_.Name -notmatch 'Domain Users'} |Select-Object -ExpandProperty Name
+    $groups = Get-Membership -Identity $user
     if ($groups) {
-	$un = Get-ADUser -Identity $user | Select-Object -ExpandProperty Name
-	$SAN = Get-ADUser -Identity $user | Select-Object -ExpandProperty SamAccountName
-        $gridObject = "<div class='obj-container'><h2 style='background-color: red;'>$un<br>$SAN</h2><ul>"
+        $name = Get-Expanded -Identity $user -Property Name
+        $sam = Get-Expanded -Identity $user -Property SamAccountName
+        $gridObject = "<div class='obj-container'><h2 style='background-color: red;'>$name<br>UPN:$sam</h2><ul>"
         ForEach ($group in $groups) {
             $gridObject += "<li>$group<li/>"	#this does not feel optimal
         }
@@ -77,10 +91,10 @@ ForEach ($user in $disabledUsers) {
 }
 #I still want information about user groups whether enabled or disabled. To omit, comment out ForEach statement.
 ForEach ($user in $activeUsers) {
-    $un = Get-ADUser -Identity $user | Select-Object -ExpandProperty Name	#repeated, cannot find an easier way to do this
-    $SAN = Get-ADUser -Identity $user | Select-Object -ExpandProperty SamAccountName
-    $groups = Get-ADUser -Identity $user | Get-ADPrincipalGroupMembership | Where-Object {$_.Name -notmatch 'Domain Users'} |Select-Object -ExpandProperty Name
-    $gridObject = "<div class='obj-container'><h2 style='background-color: green;'>$un<br>$SAN</h2>"
+    $name = Get-Expanded -Identity $user -Property Name
+    $sam = Get-Expanded -Identity $user -Property SamAccountName
+    $groups = Get-Membership -Identity $user
+    $gridObject = "<div class='obj-container'><h2 style='background-color: green;'>$name<br>UPN: $sam</h2>"
     if ($groups) {
         ForEach ($group in $groups) {
             $gridObject += "<p>$group</p>"
@@ -98,7 +112,18 @@ $html += "</div>"
 
 
 #Build and launch HTML
-ConvertTo-HTML -Head $head -Body $html | Out-File "C:\temp\Users and groups on $env:COMPUTERNAME.html"
-Start-Process "C:\temp\Users and groups on $env:COMPUTERNAME.html"
-Write-Host "This script has exported the result to C:\temp and will attempt to automatically launch. Please review any errors at this time."
+$testPath = Test-Path "C:\temp"
+if ($testPath -eq $false) {
+    Try {
+        New-Item -Path "C:\" -Name "temp" -ItemType "Directory" -ErrorAction Stop
+        }
+    Catch {
+        Write-Host "$testPath did not exist, and failed to be created"
+        exit
+    }
+}
+
+ConvertTo-HTML -Head $head -Body $html | Out-File "C:\temp\$name.html"
+Start-Process "C:\temp\$name.html"
+Write-Host "This script has exported the result to C:\temp\Users and groups on and will attempt to automatically launch. Please review any errors at this time."
 pause
