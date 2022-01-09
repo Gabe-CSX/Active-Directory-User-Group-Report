@@ -81,11 +81,11 @@ ForEach ($user in $disabledUsers) {
     if ($groups) {
         $name = Get-Expanded -Identity $user -Property Name
         $sam = Get-Expanded -Identity $user -Property SamAccountName
-        $gridObject = "<div class='obj-container'><h2 style='background-color: red;'>$name<br>UPN:$sam</h2><ul>"
+        $gridObject = "<div class='obj-container'><h2 style='background-color: red;'>$name<br>UPN:$sam</h2>"
         ForEach ($group in $groups) {
-            $gridObject += "<li>$group<li/>"	#this does not feel optimal
+            $gridObject += "<p>$group<p/>"	#this does not feel optimal
         }
-        $gridObject += "</ul></div>"
+        $gridObject += "</div>"
         $html += $gridObject
     }
 }
