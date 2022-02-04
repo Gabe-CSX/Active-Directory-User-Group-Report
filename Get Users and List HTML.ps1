@@ -2,27 +2,51 @@ Try {
 	Import-Module ActiveDirectory -ErrorAction Stop
 }
 Catch {
-	Write-Output 'Active directory module not found! Please run on a domain controller. Exiting.'
-    #Have this create procedure log
-	exit
+	throw 'ActiveDirectory module import failed.'
+    # create procedure log
 }
 
 
 #Function assignment
-function Get-Expanded ($Identity, $Property) {
-    Get-ADUser -Identity $Identity | Select-Object -ExpandProperty $Property
+function Get-ExpandedProperty {
+    param (
+        [string]$Identity,
+
+        [Parameter(Mandatory)]
+        [string]$Property,
+
+        [string]$Enabled,
+
+        [switch]$All=$false
+    )
+
+    if($All) {
+        $result = Get-ADUser -Filter * -Property Enabled | Where-Object {$_.Enabled -match "$Enabled"}
+        $result.$Property
+    }
+    if(!$All) {
+        $result = Get-ADUser -Identity $Identity
+        $result.$Property
+    }
 }
-function Get-ExpandedProperty($Enabled, $Select) {
-    Get-ADUser -Filter * -Property Enabled | Where-Object {$_.Enabled -match "$Enabled"} | Select-Object -ExpandProperty $Select
-}
-function Get-Membership($Identity) {
-    Get-ADUser -Identity $Identity | Get-ADPrincipalGroupMembership | Where-Object {$_.Name -notmatch 'Domain Users'} | Select-Object -ExpandProperty Name
+function Get-GroupMembership {
+    param (
+        [Parameter(Mandatory)]
+        $Identity,
+
+        $Property = "Name",
+
+        [string[]]$Exlusions = "Domain Users"
+    )
+
+    $result = Get-ADUser -Identity $Identity | Get-ADPrincipalGroupMembership | Where-Object {$_.Name -notmatch $Exlusions}
+    $result.$Property
 }
 
 
 #Variable assignment
-$activeUsers = Get-ExpandedProperty -Enabled "true" -Select SamAccountName
-$disabledUsers = Get-ExpandedProperty -Enabled "false" -Select SamAccountName
+$activeUsers = Get-ExpandedProperty -Enabled "true" -Property SamAccountName -All
+$disabledUsers = Get-ExpandedProperty -Enabled "false" -Property SamAccountName -All
 $title = "Users and groups on $env:COMPUTERNAME"
 $html = @"
 <div class='legend'>
@@ -41,64 +65,67 @@ $head = @"
 <meta name='viewport' content='width=device-width, initial-scale=1.0'>
 <title>$title</title>
 <style>
-    * {
-        margin: 0;
-    }
+* {
+    margin: 0;
+}
 
-    html {
-        font-family: Arial;
-        overflow-wrap: break-word;
-        font-size: 16px;
-    }
+html {
+    font-family: Arial;
+    overflow-wrap: break-word;
+    font-size: 16px;
+}
 
-    .legend {
-        padding: 20px;
-    }
+.legend {
+    padding: 20px;
+}
 
-    li {
-        text-decoration: none;
-        font-size: 16px;
-    }
+li {
+    text-decoration: none;
+    font-size: 16px;
+}
 
+.grid-container {
+    display: grid;
+    padding: 20px;
+    grid-template-columns: repeat(3, 1fr); /* No consideration for IE11 */ 
+    grid-gap: 20px;
+}
+
+.obj-container {
+    border: 1px solid black;
+    box-shadow: 0 1px 1px 0 black;
+}
+
+.groups {
+    text-align: center;
+    margin: 5px 0;
+}
+
+.enabled {
+    background-color: lightgreen;
+    padding: 0 5px;
+}
+
+.disabled {
+    background-color: orange;
+    padding: 0 5px;
+}
+
+.no-group {
+    font-weight: bold;
+}
+
+@media only screen and (min-width: 960px) {
     .grid-container {
-        display: grid;
-        padding: 20px;
-        grid-template-columns: repeat(3, 1fr);
-        justify-content: center;
-        grid-gap: 20px;
+        grid-template-columns: repeat(4, 1fr);
     }
+}
 
-    .obj-container {
-        border: 1px solid black;
-        box-shadow: 0 1px 1px 0 black;
+@media only screen and (min-width: 1440px) {
+    .grid-container {
+        grid-template-columns: repeat(5, 1fr);
     }
-
-    .groups {
-        text-align: center;
-        margin: 5px 0;
-    }
-
-    .enabled {
-        background-color: lightgreen;
-        padding: 0 5px;
-    }
-
-    .disabled {
-        background-color: orange;
-        padding: 0 5px;
-    }
-
-    @media only screen and (min-width: 960px) {
-        .grid-container {
-            grid-template-columns: repeat(4, 1fr);
-        }
-    }
-
-    @media only screen and (min-width: 1440px) {
-        .grid-container {
-            grid-template-columns: repeat(5, 1fr)
-        }
-    }
+}
 </style>
 "@
 
@@ -131,7 +158,7 @@ ForEach ($user in $activeUsers) {
             $gridObject += "<p>$group</p>"
         }
     } else {
-        $gridObject += "<p style='font-weight: bold;'>No groups!</p>"
+        $gridObject += "<p class='no-group'>No groups!</p>"
     }
     $gridObject += "</div></div>"
     $html += $gridObject
@@ -139,7 +166,7 @@ ForEach ($user in $activeUsers) {
 
 #End grid div, postcontent
 $html += "</div>"
-$date = Get-Date | Select-Object -ExpandProperty DateTime
+$date = (Get-Date).DateTime
 $html += "<h2 class='legend'>Ran on $date</h2>"
 
 #Build and launch HTML
@@ -149,8 +176,7 @@ if ($testPath -eq $false) {
         New-Item -Path "C:\" -Name "temp" -ItemType "Directory" -ErrorAction Stop
         }
     Catch {
-        Write-Output "$testPath did not exist, and failed to be created"
-        exit
+        throw "$testPath did not exist, and failed to be created"
     }
 }
 
